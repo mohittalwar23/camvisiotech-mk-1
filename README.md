@@ -110,8 +110,8 @@ If you'd like to build Dlib from source, refer to the [official Dlib GitHub inst
 
 Start by cloning the repository:
 ```bash
-git clone https://github.com/Jjateen/AIOT-Workshop.git
-cd Session-5
+git clone https://github.com/mohittalwar23/camvisiotech-mk-1.git
+cd camvisiotech-mk-1
 ```
 
 ### 3.2 Install Required Dependencies
