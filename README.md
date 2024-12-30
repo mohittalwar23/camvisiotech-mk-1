@@ -137,6 +137,9 @@ The circuit connections are depicted in the image `ckt.png`. Ensure the wiring m
 
 ## **4. Running the Surveillance Bot**
 
+### 4.0 Setting Environment Variables
+Use [the .env template](./env_template.txt) to create a .env file with neccessary environment variables.
+
 ### 4.1 Flask Web App
 
 The Flask web application serves the video feed and provides an interface for monitoring the camera and receiving alerts. To start the web app, run:
