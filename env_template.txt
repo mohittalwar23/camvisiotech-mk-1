@@ -1,0 +1,7 @@
+ESP32_IP=192.168.X.Y
+GMAIL_USER=your_email@gmail.com
+GMAIL_PASSWORD=your_password
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
+CAMERA_URL=http://192.168.X.Z/1600x1200.jpg
+RECIPIENT_EMAIL=recipient_email@example.com
