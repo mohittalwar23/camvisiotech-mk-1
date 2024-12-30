@@ -11,41 +11,43 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from telegram import Bot
 import asyncio
-import urllib.request  # Add this import for URL handling
+import urllib.request
 import requests
+from dotenv import load_dotenv
 
-# Define the IP address of your ESP32-based PCB
-esp32_ip = "192.168.137.29"  # Change to your ESP32's IP address
+# Load environment variables
+load_dotenv()
+
+# Get credentials and configurations from .env
+ESP32_IP = os.getenv('ESP32_IP')
+GMAIL_USER = os.getenv('GMAIL_USER')
+GMAIL_PASSWORD = os.getenv('GMAIL_PASSWORD')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+CAMERA_URL = os.getenv('CAMERA_URL')
+RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
+
+if not all([ESP32_IP, GMAIL_USER, GMAIL_PASSWORD, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, CAMERA_URL, RECIPIENT_EMAIL]):
+    raise ValueError("Some environment variables are missing. Please check your .env file.")
 
 # Function to trigger the buzzer
 def trigger_buzzer():
-    response = requests.get(f"http://{esp32_ip}/trigger_buzzer")
+    response = requests.get(f"http://{ESP32_IP}/trigger_buzzer")
     if response.status_code == 200:
         print("Buzzer triggered!")
 
-# Function to lock the door 
+# Function to lock the door
 def lock_door():
-    response = requests.get(f"http://{esp32_ip}/lock_door")
+    response = requests.get(f"http://{ESP32_IP}/lock_door")
     if response.status_code == 200:
         print("Door locked!")
-
-
-# Define your Gmail credentials
-GMAIL_USER = "yours"
-GMAIL_PASSWORD = "yours"
-
-# Define your Telegram bot token and chat ID
-TELEGRAM_BOT_TOKEN = 'yours'
-TELEGRAM_CHAT_ID = 'yours'
 
 # Create an SMTP client
 smtp_client = smtplib.SMTP("smtp.gmail.com", 587)
 smtp_client.starttls()
 smtp_client.login(GMAIL_USER, GMAIL_PASSWORD)
 
-url = 'http://192.168.137.189/1600x1200.jpg' #cam url
-
-# Initialize the MediaPipe Face Detection module
+# Initialize MediaPipe Face Detection
 mp_face_detection = mp.solutions.face_detection
 mp_drawing = mp.solutions.drawing_utils
 
@@ -71,7 +73,7 @@ def findEncodings(images):
 encodeListKnown = findEncodings(images)
 print('Encoding Complete')
 
-# Initialize variables for continuous "0" counting and last notification time
+# Variables for "0" counting and last notification time
 continuous_zeros = 0
 last_notification_time = None
 
@@ -81,19 +83,18 @@ def generate_frames():
     while True:
         try:
             # Capture the image from the ESP32-CAM's URL
-            img_response = urllib.request.urlopen(url)
+            img_response = urllib.request.urlopen(CAMERA_URL)
             img_np = np.array(bytearray(img_response.read()), dtype=np.uint8)
             frame = cv2.imdecode(img_np, -1)
 
             # Convert the frame to RGB
             image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Detect faces in the frame using MediaPipe Face Detection
-            with mp_face_detection.FaceDetection(
-                model_selection=0, min_detection_confidence=0.5) as face_detection:
+            # Detect faces in the frame
+            with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detection:
                 results = face_detection.process(image_rgb)
 
-                # Initialize flags for recognized and unknown
+                # Initialize flags
                 recognized = False
                 unknown = False
 
@@ -103,12 +104,9 @@ def generate_frames():
                         ih, iw, _ = frame.shape
                         x, y, w, h = int(bboxC.xmin * iw), int(bboxC.ymin * ih), int(bboxC.width * iw), int(bboxC.height * ih)
 
-                        # Crop the face region for face recognition
+                        # Crop and process the face
                         face_image = frame[y:y+h, x:x+w]
-
-                        # Ensure that face_image is not empty before resizing
                         if face_image.shape[0] > 0 and face_image.shape[1] > 0:
-                            # Perform face recognition on the cropped face image
                             imgS = cv2.resize(face_image, (0, 0), None, 0.25, 0.25)
                             imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
                             facesCurFrame = face_recognition.face_locations(imgS)
@@ -118,7 +116,6 @@ def generate_frames():
                                 matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
                                 if any(matches):
                                     recognized = True
-                                    # Get the name of the recognized known face
                                     name = classNames[matches.index(True)]
                                     y1, x2, y2, x1 = faceLoc
                                     y1, x2, y2, x1 = y1 * 4 + y, x2 * 4 + x, y2 * 4 + y, x1 * 4 + x
@@ -127,50 +124,25 @@ def generate_frames():
                                     cv2.putText(frame, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                                 else:
                                     unknown = True
-                                    # Draw a red bounding box for unknown individuals
                                     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
 
-            # Display "0/1" based on recognition status
-                
+            # Handle recognition status
             if recognized or not (recognized or unknown):
-                displayed_text = "1"
-                continuous_zeros = 0  # Reset the continuous "0" count
-            
-            
+                continuous_zeros = 0
             else:
-                displayed_text = "0"
-                continuous_zeros += 1 # Increment the continuous "0" count
+                continuous_zeros += 1
 
-            # Check if continuous_zeros has reached 5 (indicating 5 seconds of "0")
-            if continuous_zeros >= 3 * 3:  # 3 seconds * 3 frames/second
+            if continuous_zeros >= 9:  # 3 seconds of "0"
                 current_time = datetime.datetime.now()
-
-                # Check if enough time has passed since the last notification (15 se )
                 if last_notification_time is None or (current_time - last_notification_time).total_seconds() >= 15:
                     last_notification_time = current_time
-
-                    # Trigger the notification
-                    trigger_buzzer()  # Trigger the buzzer
-                    lock_door()       # Lock the door
-                    subject = "Motion Detected!"
-                    body = "Someone has entered the frame. Here's the link to the video:\n\n"
-                    video_link = "https://mohittalwar23.github.io/PythonSystemTest/"  # Replace with the actual path to your video file
-                    body += video_link
-                    send_notification(subject, body)
-
-            # Add "0/1" text to the top-left corner
-            cv2.putText(frame, displayed_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    trigger_buzzer()
+                    lock_door()
+                    send_notification("Motion Detected!", "An intruder was detected!")
 
             # Add timestamp
-            current_time = datetime.datetime.now()
-            timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
-
-            # Calculate the position of the timestamp
-            timestamp_x = frame.shape[1] - 300
-            timestamp_y = 30
-
-            # Display the timestamp at the calculated position
-            cv2.putText(frame, timestamp, (timestamp_x, timestamp_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cv2.putText(frame, timestamp, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
             # Encode the frame as JPEG
             _, buffer = cv2.imencode('.jpg', frame)
@@ -203,11 +175,10 @@ def send_notification(subject, body):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg['From'] = GMAIL_USER
-    msg['To'] = 'jeewarrior23@gmail.com'  # Replace with the recipient's email address
+    msg['To'] = RECIPIENT_EMAIL
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'plain'))
-    smtp_client.sendmail(GMAIL_USER, 'jeewarrior23@gmail.com', msg.as_string())
+    smtp_client.sendmail(GMAIL_USER, RECIPIENT_EMAIL, msg.as_string())
 
-# Run the Flask app
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
